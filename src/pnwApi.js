@@ -153,6 +153,67 @@ async function getRecentUnalignedNations(limit = 50) {
   return nations.filter((n) => Number(n.alliance_id) === 0);
 }
 
+/**
+ * Fetches one page of nations sorted by score (so results are stable across pages),
+ * with pagination info so callers can fetch further pages if needed.
+ */
+async function getNationsPage(page = 1, perPage = 100) {
+  const query = `
+    query GetNationsPage($page: Int, $first: Int) {
+      nations(page: $page, first: $first, orderBy: { column: SCORE, order: ASC }) {
+        paginatorInfo {
+          currentPage
+          hasMorePages
+        }
+        data {
+          id
+          nation_name
+          leader_name
+          alliance_id
+          score
+          num_cities
+          last_active
+          date
+          discord
+        }
+      }
+    }
+  `;
+  const data = await pnwRequest(query, { page, first: perPage });
+  return data.nations;
+}
+
+/**
+ * Pulls multiple pages of nations and filters them client-side by score range,
+ * city count range, and whether they belong to an alliance. We filter client-side
+ * (rather than asking PnW's API to do it) because their exact GraphQL filter
+ * argument names for score/city ranges aren't reliably documented - this approach
+ * only relies on fields we've already confirmed work.
+ *
+ * `maxPages` caps how much we fetch, so this never turns into a runaway scan.
+ */
+async function searchUnalignedNations({ scoreMin, scoreMax, citiesMin, citiesMax, maxPages = 10 } = {}) {
+  const results = [];
+  let page = 1;
+  let hasMorePages = true;
+
+  while (hasMorePages && page <= maxPages) {
+    const pageData = await getNationsPage(page, 100);
+    for (const nation of pageData.data) {
+      if (Number(nation.alliance_id) !== 0) continue;
+      if (scoreMin !== undefined && Number(nation.score) < scoreMin) continue;
+      if (scoreMax !== undefined && Number(nation.score) > scoreMax) continue;
+      if (citiesMin !== undefined && Number(nation.num_cities) < citiesMin) continue;
+      if (citiesMax !== undefined && Number(nation.num_cities) > citiesMax) continue;
+      results.push(nation);
+    }
+    hasMorePages = pageData.paginatorInfo.hasMorePages;
+    page++;
+  }
+
+  return results;
+}
+
 module.exports = {
   pnwRequest,
   sendMail,
@@ -160,4 +221,6 @@ module.exports = {
   getNationByName,
   getRecentNations,
   getRecentUnalignedNations,
+  getNationsPage,
+  searchUnalignedNations,
 };

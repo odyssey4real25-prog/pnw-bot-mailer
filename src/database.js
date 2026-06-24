@@ -15,6 +15,7 @@ function defaultData() {
     mailLog: [],
     knownNationIds: {},
     templates: {},
+    blacklist: {},
     settings: {
       autoRecruitEnabled: false,
     },
@@ -164,6 +165,66 @@ function setSetting(key, value) {
   saveData(data);
 }
 
+// ---------- Blacklist ----------
+
+function addToBlacklist(nationId, reason, addedBy) {
+  const data = loadData();
+  data.blacklist[String(nationId)] = {
+    nation_id: nationId,
+    reason: reason || null,
+    added_by: addedBy,
+    added_at: new Date().toISOString(),
+  };
+  saveData(data);
+}
+
+function removeFromBlacklist(nationId) {
+  const data = loadData();
+  const existed = Boolean(data.blacklist[String(nationId)]);
+  delete data.blacklist[String(nationId)];
+  saveData(data);
+  return existed;
+}
+
+function isBlacklisted(nationId) {
+  const data = loadData();
+  return Boolean(data.blacklist[String(nationId)]);
+}
+
+function getBlacklistEntry(nationId) {
+  const data = loadData();
+  return data.blacklist[String(nationId)] || null;
+}
+
+function getAllBlacklisted() {
+  const data = loadData();
+  return Object.values(data.blacklist);
+}
+
+// ---------- Stats ----------
+
+function getStats() {
+  const data = loadData();
+  const recruits = Object.values(data.recruits);
+  const mailLog = data.mailLog;
+
+  const sentCount = mailLog.filter((m) => m.direction === 'outgoing').length;
+  const byStage = {};
+  for (const r of recruits) {
+    byStage[r.stage] = (byStage[r.stage] || 0) + 1;
+  }
+  const joined = byStage['Joined'] || 0;
+  const conversion = sentCount > 0 ? ((joined / sentCount) * 100).toFixed(1) : '0.0';
+
+  return {
+    totalRecruitsTracked: recruits.length,
+    mailsSent: sentCount,
+    byStage,
+    joined,
+    conversionRate: conversion,
+  };
+}
+
 module.exports = {
   getRecruit,
   getAllRecruits,
@@ -181,4 +242,10 @@ module.exports = {
   getRandomTemplate,
   getSetting,
   setSetting,
+  addToBlacklist,
+  removeFromBlacklist,
+  isBlacklisted,
+  getBlacklistEntry,
+  getAllBlacklisted,
+  getStats,
 };

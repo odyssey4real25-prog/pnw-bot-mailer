@@ -65,6 +65,14 @@ module.exports = {
 
       const nationId = nation.id;
 
+      if (db.isBlacklisted(nationId)) {
+        const entry = db.getBlacklistEntry(nationId);
+        return interaction.editReply(
+          `🚫 ${nation.nation_name} (#${nationId}) is on the blacklist${entry?.reason ? ` (reason: ${entry.reason})` : ''}. ` +
+            `If you're sure you want to mail them anyway, remove them from the blacklist first with \`/blacklist remove\`.`
+        );
+      }
+
       try {
         await pnw.sendMail(nationId, subject, message);
       } catch (err) {

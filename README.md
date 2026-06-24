@@ -225,3 +225,79 @@ Tell me when this is working and I'll build:
 - Bulk recruiting commands (mail everyone matching a filter, e.g. score/city range)
 - Recruitment pipeline stages (New → Interested → Joined, etc.)
 - Recruit CRM profiles with notes and staff assignment
+
+---
+
+# PHASE 3 — Bulk Recruiting, Pipeline Tracking, CRM & Blacklist
+
+This phase adds:
+- **`/blacklist add/remove/list`** — nations the bot should never recruit (hostile players, trolls, spies)
+- **`/recruit stage`** — track each recruit through a pipeline: New → Interested → Interviewing → Invited → Joined → Rejected → Blacklisted
+- **`/recruit profile`** — a full CRM-style snapshot of any recruit: score, cities, stage, assigned staff, mail count, notes
+- **`/recruit assign`** — assign a recruit to a specific staff member
+- **`/recruit note`** — save free-text notes on a recruit
+- **`/recruit stats`** — a dashboard of total mails sent, recruits by stage, and conversion rate
+- **`/recruit bulk`** — mail many unaligned nations at once, filtered by score/city range, with a **dry-run by default** so you see exactly what would happen before anything is sent
+
+### New setup steps for Phase 3
+
+1. Replace your project files with the new zip (or unzip fresh, as before)
+2. Run `npm install` (no new packages this time, but safe to run anyway)
+3. Run `node src/deployCommands.js` (registers the new `/blacklist` command and the new `/recruit` subcommands)
+4. Start the bot: `node src/index.js`
+
+### How to use it
+
+**Track a recruit's progress:**
+```
+/recruit stage nation:arrow kingdom stage:Interested
+```
+
+**See everything about a recruit:**
+```
+/recruit profile nation:arrow kingdom
+```
+
+**Assign a recruit to a staff member:**
+```
+/recruit assign nation:arrow kingdom staff:@Joe
+```
+
+**Add a note:**
+```
+/recruit note nation:arrow kingdom text:"Said they might join after talking to their alliance"
+```
+
+**Check your dashboard:**
+```
+/recruit stats
+```
+
+**Blacklist a troublesome nation:**
+```
+/blacklist add nation:troll kingdom reason:"Spammed hostile messages"
+```
+
+**Bulk recruit (the big one) — always test with a dry-run first:**
+```
+/recruit bulk score-min:50 score-max:300 cities-min:1 cities-max:10
+```
+This shows you how many nations match **without sending anything**. When you're happy with the numbers, re-run the exact same command with `confirm:true` added:
+```
+/recruit bulk score-min:50 score-max:300 cities-min:1 cities-max:10 confirm:true
+```
+
+### Built-in safety limits (Module 13)
+
+- **Max 30 mails per bulk-send command** — if more nations match, the rest are simply left for your next run, so you can never accidentally blast hundreds of nations at once
+- **2-second pause between each mail** sent during a bulk run
+- **7-day cooldown** — any nation mailed (manually, automatically, or in bulk) within the last 7 days is automatically skipped in future bulk runs
+- **Blacklisted nations are always skipped** in bulk runs, and manual `/mail send` will warn you and refuse unless you remove them from the blacklist first
+
+### A technical honesty note
+
+PnW doesn't publicly document the exact filter arguments their API accepts for things like score/city ranges, so `/recruit bulk` works by fetching pages of nations (sorted by score) and filtering them in our own code — using only the data fields we've already confirmed work reliably (`score`, `num_cities`, `alliance_id`). This is slightly slower than a server-side filter would be, but far more reliable, since it doesn't depend on guessing undocumented API behavior.
+
+### What's next (Phase 4)
+
+Once this is solid, tell me and I can add things like: cooldown-aware automatic follow-up campaigns (Day 3 / Day 7 / Day 14 reminders), A/B testing between templates to see which converts best, and a join-attribution system to track which recruiter/campaign brought in each new member.
