@@ -65,6 +65,9 @@ function upsertRecruit(nationId, fields) {
     notes: null,
     last_contacted_at: null,
     created_at: new Date().toISOString(),
+    follow_up_stage: 0, // 0 = none sent, 1/2/3 = which follow-up has been sent
+    initial_template_id: null, // which template first contacted this recruit (for A/B testing)
+    initial_sent_by: null, // who/what sent that first contact ('system' for automated)
   };
   data.recruits[key] = { ...existing, ...fields };
   saveData(data);
@@ -77,6 +80,21 @@ function setRecruitThread(nationId, threadId) {
 
 function touchLastContacted(nationId) {
   return upsertRecruit(nationId, { last_contacted_at: new Date().toISOString() });
+}
+
+/**
+ * Records which template and sender first contacted this recruit - but only
+ * if that hasn't already been recorded. This is what powers A/B testing and
+ * join attribution: we want the FIRST contact's template, not any follow-up.
+ */
+function setInitialAttributionIfMissing(nationId, templateId, sentBy) {
+  const existing = getRecruit(nationId);
+  if (existing && existing.initial_template_id) return; // already recorded, don't overwrite
+  upsertRecruit(nationId, { initial_template_id: templateId, initial_sent_by: sentBy });
+}
+
+function setFollowUpStage(nationId, stage) {
+  return upsertRecruit(nationId, { follow_up_stage: stage });
 }
 
 // ---------- Mail log ----------
@@ -116,10 +134,20 @@ function markNationKnown(nationId) {
 }
 
 // ---------- Recruitment templates ----------
+// type can be: 'initial' (default - used for new-nation/bulk recruiting),
+// 'followup1' (sent ~3 days after first contact), 'followup2' (~7 days),
+// or 'followup3' (~14 days, final follow-up).
 
-function addTemplate(id, { name, subject, body }) {
+function addTemplate(id, { name, subject, body, type }) {
   const data = loadData();
-  data.templates[id] = { id, name, subject, body, created_at: new Date().toISOString() };
+  data.templates[id] = {
+    id,
+    name,
+    subject,
+    body,
+    type: type || 'initial',
+    created_at: new Date().toISOString(),
+  };
   saveData(data);
   return data.templates[id];
 }
@@ -134,6 +162,13 @@ function getAllTemplates() {
   return Object.values(data.templates);
 }
 
+function getTemplatesByType(type) {
+  const data = loadData();
+  // Templates saved before this feature existed have no `type` field at all -
+  // treat those as 'initial' so nothing old silently stops working.
+  return Object.values(data.templates).filter((t) => (t.type || 'initial') === type);
+}
+
 function deleteTemplate(id) {
   const data = loadData();
   const existed = Boolean(data.templates[id]);
@@ -143,13 +178,54 @@ function deleteTemplate(id) {
 }
 
 /**
- * Picks a random template out of all saved templates. Returns null if none exist.
+ * Picks a random template of the given type. Defaults to 'initial' (the
+ * pool used by new-nation auto-recruit and bulk recruiting).
+ * Returns null if no templates of that type exist.
  */
-function getRandomTemplate() {
+function getRandomTemplate(type = 'initial') {
+  const pool = getTemplatesByType(type);
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * A/B testing report: for each template, how many recruits it first-contacted,
+ * and how many of those recruits ended up at stage "Joined".
+ */
+function getTemplateStats() {
   const data = loadData();
-  const all = Object.values(data.templates);
-  if (all.length === 0) return null;
-  return all[Math.floor(Math.random() * all.length)];
+  const recruits = Object.values(data.recruits);
+  const templates = Object.values(data.templates);
+
+  return templates.map((t) => {
+    const contacted = recruits.filter((r) => r.initial_template_id === t.id);
+    const joined = contacted.filter((r) => r.stage === 'Joined');
+    const conversion = contacted.length > 0 ? ((joined.length / contacted.length) * 100).toFixed(1) : '0.0';
+    return {
+      templateId: t.id,
+      type: t.type || 'initial',
+      sentAsFirstContact: contacted.length,
+      joins: joined.length,
+      conversionRate: conversion,
+    };
+  });
+}
+
+/**
+ * Join attribution report: for every recruit currently at stage "Joined",
+ * which template and which sender (staff member or "system") first reached them.
+ */
+function getJoinAttribution() {
+  const data = loadData();
+  return Object.values(data.recruits)
+    .filter((r) => r.stage === 'Joined')
+    .map((r) => ({
+      nationId: r.nation_id,
+      nationName: r.nation_name,
+      initialTemplateId: r.initial_template_id,
+      initialSentBy: r.initial_sent_by,
+      assignedStaffId: r.assigned_staff_id,
+    }));
 }
 
 // ---------- Settings ----------
@@ -231,6 +307,8 @@ module.exports = {
   upsertRecruit,
   setRecruitThread,
   touchLastContacted,
+  setInitialAttributionIfMissing,
+  setFollowUpStage,
   addMailLog,
   getMailLog,
   isKnownNation,
@@ -238,8 +316,11 @@ module.exports = {
   addTemplate,
   getTemplate,
   getAllTemplates,
+  getTemplatesByType,
   deleteTemplate,
   getRandomTemplate,
+  getTemplateStats,
+  getJoinAttribution,
   getSetting,
   setSetting,
   addToBlacklist,

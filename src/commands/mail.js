@@ -88,6 +88,7 @@ module.exports = {
         sentBy: interaction.user.id,
       });
       db.touchLastContacted(nationId);
+      db.setInitialAttributionIfMissing(nationId, null, interaction.user.id);
 
       // Post into the recruit's dedicated thread
       const thread = await getOrCreateRecruitThread(

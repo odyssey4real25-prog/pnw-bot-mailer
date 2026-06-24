@@ -57,8 +57,23 @@ module.exports = {
                 .setDescription('Message body. Use {nation_name} and {leader_name} as placeholders.')
                 .setRequired(true)
             )
+            .addStringOption((opt) =>
+              opt
+                .setName('type')
+                .setDescription('When this template is used (default: initial)')
+                .setRequired(false)
+                .addChoices(
+                  { name: 'initial (first contact - new nations/bulk recruiting)', value: 'initial' },
+                  { name: 'followup1 (sent ~3 days after first contact)', value: 'followup1' },
+                  { name: 'followup2 (sent ~7 days after first contact)', value: 'followup2' },
+                  { name: 'followup3 (final follow-up, ~14 days)', value: 'followup3' }
+                )
+            )
         )
         .addSubcommand((sub) => sub.setName('list').setDescription('List all saved templates'))
+        .addSubcommand((sub) =>
+          sub.setName('stats').setDescription('A/B testing report: which templates lead to the most joins')
+        )
         .addSubcommand((sub) =>
           sub
             .setName('delete')
@@ -126,6 +141,9 @@ module.exports = {
     )
     .addSubcommand((sub) => sub.setName('stats').setDescription('Recruitment statistics dashboard'))
     .addSubcommand((sub) =>
+      sub.setName('attribution').setDescription('See which template/sender brought in each joined recruit')
+    )
+    .addSubcommand((sub) =>
       sub
         .setName('bulk')
         .setDescription('Mail many unaligned nations at once matching filters (dry-run by default)')
@@ -148,6 +166,7 @@ module.exports = {
         const id = interaction.options.getString('id').toLowerCase().replace(/\s+/g, '-');
         const subject = interaction.options.getString('subject');
         const body = interaction.options.getString('body');
+        const type = interaction.options.getString('type') || 'initial';
 
         if (db.getTemplate(id)) {
           return interaction.reply({
@@ -156,9 +175,13 @@ module.exports = {
           });
         }
 
-        db.addTemplate(id, { name: id, subject, body });
+        db.addTemplate(id, { name: id, subject, body, type });
+        const usageHint =
+          type === 'initial'
+            ? 'It will now be included in the random rotation for new-nation recruiting and bulk sends.'
+            : `It will be sent automatically as the "${type}" follow-up to recruits who haven't moved past the "New" stage.`;
         return interaction.reply({
-          content: `✅ Template "${id}" created. It will now be included in the random rotation for new-nation recruiting.`,
+          content: `✅ Template "${id}" created (type: ${type}). ${usageHint}`,
           ephemeral: true,
         });
       }
@@ -177,9 +200,13 @@ module.exports = {
           .setColor(0x9b59b6)
           .setDescription(
             templates
-              .map((t) => `**${t.id}**\nSubject: ${t.subject}\nBody: ${t.body.slice(0, 150)}${t.body.length > 150 ? '...' : ''}`)
+              .map(
+                (t) =>
+                  `**${t.id}** _(${t.type || 'initial'})_\nSubject: ${t.subject}\nBody: ${t.body.slice(0, 150)}${t.body.length > 150 ? '...' : ''}`
+              )
               .join('\n\n')
           );
+
 
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
@@ -191,6 +218,30 @@ module.exports = {
           content: existed ? `✅ Template "${id}" deleted.` : `❌ No template found with ID "${id}".`,
           ephemeral: true,
         });
+      }
+
+      if (sub === 'stats') {
+        const stats = db.getTemplateStats();
+        if (stats.length === 0) {
+          return interaction.reply({ content: 'No templates yet, so no A/B data to show.', ephemeral: true });
+        }
+
+        // Sort best-converting first, so the winner is obvious at a glance.
+        stats.sort((a, b) => Number(b.conversionRate) - Number(a.conversionRate));
+
+        const embed = new EmbedBuilder()
+          .setTitle('🧪 Template A/B Testing Report')
+          .setColor(0x1abc9c)
+          .setDescription(
+            stats
+              .map(
+                (s) =>
+                  `**${s.templateId}** _(${s.type})_\nFirst-contacted: ${s.sentAsFirstContact} | Joined: ${s.joins} | Conversion: ${s.conversionRate}%`
+              )
+              .join('\n\n')
+          );
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
     }
 
@@ -342,6 +393,31 @@ module.exports = {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
+    // ---------- /recruit attribution ----------
+    if (sub === 'attribution') {
+      const joined = db.getJoinAttribution();
+      if (joined.length === 0) {
+        return interaction.reply({
+          content: 'No recruits are currently marked "Joined" yet. Use `/recruit stage` to update a recruit\'s stage as they progress.',
+          ephemeral: true,
+        });
+      }
+
+      const lines = joined.map((j) => {
+        const sender = j.initialSentBy === 'auto-recruit-system' ? 'Auto-Recruit System' : `<@${j.initialSentBy}>`;
+        const template = j.initialTemplateId || '(manual, no template)';
+        const staff = j.assignedStaffId ? `<@${j.assignedStaffId}>` : 'Unassigned';
+        return `**${j.nationName}** (#${j.nationId})\nFirst contacted by: ${sender} | Template: ${template} | Assigned staff: ${staff}`;
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle('🏆 Join Attribution Report')
+        .setColor(0x2ecc71)
+        .setDescription(lines.join('\n\n').slice(0, 4000));
+
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     // ---------- /recruit bulk ----------
     if (sub === 'bulk') {
       await interaction.deferReply({ ephemeral: true });
@@ -375,6 +451,8 @@ module.exports = {
         return interaction.editReply(
           `🔍 **Dry run** — found **${candidates.length}** matching nation(s), **${eligible.length}** eligible to mail ` +
             `(after skipping blacklisted/recently-contacted).\n\n` +
+            `✅ Safety check: every result above has **no alliance** (alliance_id = 0). Nations belonging to ` +
+            `any other alliance — including their applicants — are never included, so this cannot count as poaching.\n\n` +
             `This will send at most **${Math.min(eligible.length, BULK_MAX_SEND)}** mails per run (safety cap), ` +
             `with a short delay between each.\n\n` +
             `Re-run this same command with \`confirm:true\` to actually send.`
@@ -386,7 +464,7 @@ module.exports = {
       const failures = [];
 
       for (const nation of toSend) {
-        const template = db.getRandomTemplate();
+        const template = db.getRandomTemplate('initial');
         if (!template) break;
 
         const subject = fillTemplate(template.subject, nation);
@@ -401,6 +479,7 @@ module.exports = {
 
         db.addMailLog({ nationId: nation.id, direction: 'outgoing', subject, message: body, sentBy: interaction.user.id });
         db.touchLastContacted(nation.id);
+        db.setInitialAttributionIfMissing(nation.id, template.id, interaction.user.id);
         sentCount++;
 
         try {

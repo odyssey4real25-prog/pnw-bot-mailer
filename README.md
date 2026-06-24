@@ -301,3 +301,50 @@ PnW doesn't publicly document the exact filter arguments their API accepts for t
 ### What's next (Phase 4)
 
 Once this is solid, tell me and I can add things like: cooldown-aware automatic follow-up campaigns (Day 3 / Day 7 / Day 14 reminders), A/B testing between templates to see which converts best, and a join-attribution system to track which recruiter/campaign brought in each new member.
+
+---
+
+# PHASE 4 — Follow-Up Campaigns, A/B Testing & Join Attribution
+
+This phase adds:
+- **Automatic follow-ups** at ~3, ~7, and ~14 days after first contact, but only to recruits still sitting at the "New" stage (our best proxy for "hasn't replied," since PnW's API has no inbox-reading capability)
+- **Template types** — templates are now tagged `initial`, `followup1`, `followup2`, or `followup3`, so the bot knows which message to send at which point
+- **A/B testing report** (`/recruit template stats`) — shows how many recruits each template first-contacted, and how many of those eventually joined
+- **Join attribution** (`/recruit attribution`) — for every nation currently at "Joined" stage, shows exactly which template and which sender (staff member or the automated system) first reached them
+
+### New setup steps for Phase 4
+
+1. Replace your project files with the new zip
+2. `npm install` (no new packages needed, but safe to run)
+3. `node src/deployCommands.js` (registers the new `template stats` and `attribution` subcommands, plus the new `type` option on `template create`)
+4. `node src/index.js`
+
+### How to use it
+
+**Create a follow-up template** (same command as before, with a new `type` option):
+```
+/recruit template create id:gentle-nudge type:followup1 subject:"Still there?" body:"Hi {leader_name}, just checking in - still interested in {nation_name} joining us?"
+```
+
+Without follow-up templates created, the bot simply won't send any follow-ups (it never sends a generic fallback) - so this is entirely opt-in. Your existing `initial`-type templates from Phase 2/3 keep working exactly as before with no changes needed.
+
+**See which templates are converting best:**
+```
+/recruit template stats
+```
+
+**See who brought in your recent joins:**
+```
+/recruit attribution
+```
+(Remember to actually move recruits to "Joined" with `/recruit stage` as they join your alliance in-game — this report is only as accurate as your stage-tracking.)
+
+### Important honesty notes
+
+- **"No reply" is inferred, not detected.** Since PnW's API can't read your inbox, the bot treats "still at stage New" as a stand-in for "hasn't responded yet." If staff manually move a recruit to **any** other stage (Interested, Interviewing, Invited, Rejected, even just adding them somewhere), follow-ups stop for that recruit. Make a habit of updating stages as you talk to people, or the bot will keep following up with someone you're already in conversation with.
+- **The scan runs once daily**, not continuously, so a recruit who crosses the 3-day mark might get their follow-up anywhere within that day's check rather than the exact moment they hit 72 hours.
+- Follow-ups respect the blacklist, just like everything else.
+
+### What's next (Phase 5 and beyond)
+
+At this point, all the "high-end" features from the original spec (Module 16) are covered except multi-alliance support and recruit scoring. Let me know if you want either of those, or if you'd like to revisit/polish anything from earlier phases instead (e.g. the staff-assignment alert system, or a proper applicant-detection module for when someone applies directly to your alliance).

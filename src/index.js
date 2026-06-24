@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { startNewNationScanner } = require('./scheduler/newNationScanner');
+const { startFollowUpScanner } = require('./scheduler/followUpScanner');
 
 // Make sure required settings exist before we even try to start.
 const required = ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'PNW_API_KEY'];
@@ -44,4 +45,5 @@ client.login(process.env.DISCORD_TOKEN);
 
 client.once('clientReady', () => {
   startNewNationScanner(client);
+  startFollowUpScanner(client);
 });

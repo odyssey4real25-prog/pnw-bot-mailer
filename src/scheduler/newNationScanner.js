@@ -59,7 +59,7 @@ async function runScan(client) {
     if (!autoEnabled) continue;
     if (sentCount >= MAX_PER_RUN) continue;
 
-    const template = db.getRandomTemplate();
+    const template = db.getRandomTemplate('initial');
     if (!template) continue; // no templates saved yet, nothing to send
 
     const subject = fillTemplate(template.subject, nation);
@@ -80,6 +80,7 @@ async function runScan(client) {
       sentBy: 'auto-recruit-system',
     });
     db.touchLastContacted(nation.id);
+    db.setInitialAttributionIfMissing(nation.id, template.id, 'auto-recruit-system');
     sentCount++;
 
     if (logChannel) {
