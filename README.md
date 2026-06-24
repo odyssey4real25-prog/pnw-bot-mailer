@@ -5,6 +5,7 @@ This is **Phase 1** of your bot. It can:
 - Log every mail sent into a dedicated thread per recruit
 - Let staff reply to recruits from inside that thread (`/reply`)
 - Show full mail history for a nation (`/mail history`)
+- List all available commands at any time (`/help`) — this list always stays accurate automatically, even after future upgrades add new commands
 
 It does NOT yet do auto-recruiting, bulk mailing, or the CRM stuff —
 that's Phase 2+. This phase is the foundation everything else plugs into.
