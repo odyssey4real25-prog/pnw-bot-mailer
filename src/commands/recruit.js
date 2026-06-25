@@ -12,6 +12,7 @@ const db = require('../database');
 const pnw = require('../pnwApi');
 const { resolveNation } = require('../utils/resolveNation');
 const { getOrCreateRecruitThread } = require('../utils/threads');
+const { calculateRecruitScore } = require('../utils/recruitScore');
 
 const VALID_STAGES = ['New', 'Interested', 'Interviewing', 'Invited', 'Joined', 'Rejected', 'Blacklisted'];
 
@@ -121,6 +122,14 @@ module.exports = {
     )
     .addSubcommand((sub) =>
       sub
+        .setName('score')
+        .setDescription("See a recruit's quality score and why it was scored that way")
+        .addStringOption((opt) =>
+          opt.setName('nation').setDescription('Nation ID, name, or profile link').setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('assign')
         .setDescription('Assign a recruit to a staff member')
         .addStringOption((opt) =>
@@ -151,6 +160,12 @@ module.exports = {
         .addIntegerOption((opt) => opt.setName('score-max').setDescription('Maximum score').setRequired(false))
         .addIntegerOption((opt) => opt.setName('cities-min').setDescription('Minimum city count').setRequired(false))
         .addIntegerOption((opt) => opt.setName('cities-max').setDescription('Maximum city count').setRequired(false))
+        .addBooleanOption((opt) =>
+          opt
+            .setName('exclude-vacation-mode')
+            .setDescription('Skip nations currently in vacation mode (default: true)')
+            .setRequired(false)
+        )
         .addBooleanOption((opt) =>
           opt.setName('confirm').setDescription('Set to true to actually send (default: dry-run only)').setRequired(false)
         )
@@ -318,20 +333,53 @@ module.exports = {
       const recruit = db.getRecruit(nation.id);
       const mailCount = db.getMailLog(nation.id).length;
       const blacklisted = db.isBlacklisted(nation.id);
+      const quality = calculateRecruitScore(nation);
 
       const embed = new EmbedBuilder()
         .setTitle(`📇 ${nation.nation_name} (#${nation.id})`)
         .setColor(blacklisted ? 0xe74c3c : 0x3498db)
         .addFields(
           { name: 'Leader', value: nation.leader_name || 'Unknown', inline: true },
-          { name: 'Score', value: String(nation.score ?? 'Unknown'), inline: true },
+          { name: 'War Score (in-game)', value: String(nation.score ?? 'Unknown'), inline: true },
           { name: 'Cities', value: String(nation.num_cities ?? 'Unknown'), inline: true },
+          { name: 'Recruit Quality', value: `${quality.total}/100 (${quality.tier})`, inline: true },
           { name: 'Stage', value: recruit?.stage || 'Not tracked yet', inline: true },
           { name: 'Assigned Staff', value: recruit?.assigned_staff_id ? `<@${recruit.assigned_staff_id}>` : 'None', inline: true },
           { name: 'Mails Sent', value: String(mailCount), inline: true },
           { name: 'Last Contacted', value: recruit?.last_contacted_at || 'Never', inline: true },
           { name: 'Blacklisted', value: blacklisted ? '🚫 Yes' : 'No', inline: true },
           { name: 'Notes', value: recruit?.notes || 'None' }
+        );
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // ---------- /recruit score ----------
+    if (sub === 'score') {
+      await interaction.deferReply({ ephemeral: true });
+      const input = interaction.options.getString('nation');
+
+      let nation;
+      try {
+        nation = await resolveNation(input);
+      } catch (err) {
+        return interaction.editReply(`❌ Could not look up that nation: ${err.message}`);
+      }
+      if (!nation) return interaction.editReply(`❌ No nation found matching "${input}".`);
+
+      const quality = calculateRecruitScore(nation);
+      const tierEmoji = { High: '🟢', Medium: '🟡', Low: '🔴' }[quality.tier];
+
+      const embed = new EmbedBuilder()
+        .setTitle(`${tierEmoji} ${nation.nation_name} (#${nation.id}) — ${quality.total}/100 (${quality.tier})`)
+        .setColor(quality.tier === 'High' ? 0x2ecc71 : quality.tier === 'Medium' ? 0xf1c40f : 0xe74c3c)
+        .setDescription('This is a heuristic to help triage candidates, not a guarantee of how someone will respond.')
+        .addFields(
+          { name: 'Activity', value: `${quality.breakdown.activity}/35`, inline: true },
+          { name: 'Cities', value: `${quality.breakdown.cities}/25`, inline: true },
+          { name: 'Infrastructure', value: `${quality.breakdown.infrastructure}/20`, inline: true },
+          { name: 'Nation Age', value: `${quality.breakdown.age}/12`, inline: true },
+          { name: 'War Activity', value: `${quality.breakdown.warActivity}/8`, inline: true }
         );
 
       return interaction.editReply({ embeds: [embed] });
@@ -426,6 +474,7 @@ module.exports = {
       const scoreMax = interaction.options.getInteger('score-max') ?? undefined;
       const citiesMin = interaction.options.getInteger('cities-min') ?? undefined;
       const citiesMax = interaction.options.getInteger('cities-max') ?? undefined;
+      const excludeVacationMode = interaction.options.getBoolean('exclude-vacation-mode') ?? true;
       const confirm = interaction.options.getBoolean('confirm') ?? false;
 
       if (confirm && db.getAllTemplates().length === 0) {
@@ -434,7 +483,7 @@ module.exports = {
 
       let candidates;
       try {
-        candidates = await pnw.searchUnalignedNations({ scoreMin, scoreMax, citiesMin, citiesMax, maxPages: 10 });
+        candidates = await pnw.searchUnalignedNations({ scoreMin, scoreMax, citiesMin, citiesMax, excludeVacationMode, maxPages: 10 });
       } catch (err) {
         return interaction.editReply(`❌ Search failed: ${err.message}`);
       }
@@ -447,10 +496,23 @@ module.exports = {
         return true;
       });
 
+      // Score every eligible candidate and sort best-first, so when the safety
+      // cap kicks in, the highest-quality recruits get mailed before lower ones.
+      const scored = eligible
+        .map((n) => ({ nation: n, quality: calculateRecruitScore(n) }))
+        .sort((a, b) => b.quality.total - a.quality.total);
+
+      const avgScore =
+        scored.length > 0
+          ? Math.round(scored.reduce((sum, s) => sum + s.quality.total, 0) / scored.length)
+          : 0;
+
       if (!confirm) {
         return interaction.editReply(
           `🔍 **Dry run** — found **${candidates.length}** matching nation(s), **${eligible.length}** eligible to mail ` +
             `(after skipping blacklisted/recently-contacted).\n\n` +
+            `📊 Average recruit quality score: **${avgScore}/100**. The bot will prioritize the highest-scoring ` +
+            `nations first when sending.\n\n` +
             `✅ Safety check: every result above has **no alliance** (alliance_id = 0). Nations belonging to ` +
             `any other alliance — including their applicants — are never included, so this cannot count as poaching.\n\n` +
             `This will send at most **${Math.min(eligible.length, BULK_MAX_SEND)}** mails per run (safety cap), ` +
@@ -459,7 +521,7 @@ module.exports = {
         );
       }
 
-      const toSend = eligible.slice(0, BULK_MAX_SEND);
+      const toSend = scored.slice(0, BULK_MAX_SEND).map((s) => s.nation);
       let sentCount = 0;
       const failures = [];
 

@@ -348,3 +348,71 @@ Without follow-up templates created, the bot simply won't send any follow-ups (i
 ### What's next (Phase 5 and beyond)
 
 At this point, all the "high-end" features from the original spec (Module 16) are covered except multi-alliance support and recruit scoring. Let me know if you want either of those, or if you'd like to revisit/polish anything from earlier phases instead (e.g. the staff-assignment alert system, or a proper applicant-detection module for when someone applies directly to your alliance).
+
+---
+
+# PHASE 5 — Faster, More Accurate Bulk Search
+
+This phase doesn't add new commands — it's an under-the-hood upgrade to `/recruit bulk`.
+
+### What changed and why
+
+While researching the next phase, I found PnW's actual published GraphQL schema. Two important things came out of that:
+
+1. **`/recruit bulk` is now faster and more accurate.** Previously, it fetched large batches of nations and filtered by score/cities in our own code. PnW's API actually supports real server-side filters for this (`min_score`, `max_score`, `min_cities`, `max_cities`), so the bot now asks PnW's servers to do the filtering directly - fewer requests, faster results.
+2. **New option: `exclude-vacation-mode`** (defaults to `true`). Nations in vacation mode can't be recruited anyway, so they're now skipped automatically unless you explicitly turn this off.
+3. **Safety net included:** if PnW's servers ever reject these filter arguments (their documentation has been wrong before, twice, in this very project), the bot automatically falls back to the old, slower-but-proven method instead of breaking. You'd never see an error from this - it just quietly falls back and keeps working.
+
+### An honest, important limitation I confirmed this round
+
+**Module 6 from the original spec ("auto-detection of alliance applicants") cannot be built.** I found and read PnW's actual schema for the `Alliance` type, and it has no field anywhere for pending applicants - not for your alliance, not for any alliance. This isn't a gap in the bot; it's data PnW simply doesn't expose through their API at all. If you want to react to new applicants, that will always require someone manually checking your alliance's applicant list in-game and acting on it - there's no way around that with the tools PnW provides.
+
+### Setup steps
+
+1. Replace `src/pnwApi.js` and `src/commands/recruit.js` with the new versions (or unzip fresh, as always)
+2. `npm install` (no new packages)
+3. `node src/deployCommands.js` (registers the new `exclude-vacation-mode` option)
+4. `node src/index.js`
+
+No changes to how you actually use `/recruit bulk` - same command, same dry-run-first workflow, just faster and slightly smarter by default now.
+
+---
+
+# PHASE 6 — Recruit Scoring System
+
+This adds a 0-100 quality score to every recruit, based on activity, city count, infrastructure, nation age, and war activity - so you can triage candidates instead of treating every unaligned nation the same.
+
+### New setup steps
+
+1. Replace your project files with the new zip
+2. `npm install` (no new packages)
+3. `node src/deployCommands.js` (registers the new `/recruit score` subcommand)
+4. `node src/index.js`
+
+### How to use it
+
+**Check one nation's score:**
+```
+/recruit score nation:arrow kingdom
+```
+Shows the total score, tier (High/Medium/Low), and a breakdown of exactly why it scored that way.
+
+**See it baked into a profile:**
+```
+/recruit profile nation:arrow kingdom
+```
+Now includes a "Recruit Quality" field alongside everything else.
+
+**Bulk sends now prioritize automatically.** When you run `/recruit bulk`, candidates are scored and sorted best-first *before* the 30-per-run safety cap is applied - so if there are 200 eligible nations, the 30 highest-scoring ones get mailed, not just the first 30 found. The dry-run output now also shows the average quality score across all eligible nations, so you get a feel for the batch before sending anything.
+
+### How scoring works (so you can trust or adjust it)
+
+| Factor | Max points | Logic |
+|---|---|---|
+| Activity | 35 | Active in the last 24h scores highest; drops off after that |
+| Cities | 25 | More cities = more invested player (caps at 15 cities) |
+| Infrastructure | 20 | Higher average infrastructure per city = more developed |
+| Nation age | 12 | 2-180 days old scores highest (established but still searching); brand new or very old scores lower |
+| War activity | 8 | Any current war involvement suggests an engaged, active player |
+
+**Important honesty note:** this is a heuristic I designed based on reasonable assumptions about what makes a "good" recruit, not something PnW or anyone else validated. It's meant to help you sort a long list faster, not to replace your own judgment about a specific nation. If after using it for a while the priorities feel wrong (e.g. you think war activity shouldn't matter, or city count should be weighted higher), tell me and I can adjust the weights - they're just numbers in one function, easy to retune.

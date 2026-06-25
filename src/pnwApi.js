@@ -79,7 +79,17 @@ async function getNation(nationId) {
           score
           num_cities
           last_active
+          date
           discord
+          cities {
+            infrastructure
+          }
+          offensive_wars {
+            id
+          }
+          defensive_wars {
+            id
+          }
         }
       }
     }
@@ -127,7 +137,17 @@ async function getNationByName(name) {
           score
           num_cities
           last_active
+          date
           discord
+          cities {
+            infrastructure
+          }
+          offensive_wars {
+            id
+          }
+          defensive_wars {
+            id
+          }
         }
       }
     }
@@ -154,13 +174,22 @@ async function getRecentUnalignedNations(limit = 50) {
 }
 
 /**
- * Fetches one page of nations sorted by score (so results are stable across pages),
- * with pagination info so callers can fetch further pages if needed.
+ * Fetches one page of nations matching the given filters, applied server-side
+ * by PnW's own API. These filter argument names (alliance_id, min_score,
+ * max_score, min_cities, max_cities, vmode) come directly from PnW's actual
+ * published GraphQL schema, not guesswork.
  */
-async function getNationsPage(page = 1, perPage = 100) {
+async function getNationsPage(page = 1, perPage = 100, filters = {}) {
   const query = `
-    query GetNationsPage($page: Int, $first: Int) {
-      nations(page: $page, first: $first, orderBy: { column: SCORE, order: ASC }) {
+    query GetNationsPage(
+      $page: Int, $first: Int!, $allianceId: [Int], $minScore: Float, $maxScore: Float,
+      $minCities: Int, $maxCities: Int, $vmode: Boolean
+    ) {
+      nations(
+        page: $page, first: $first, alliance_id: $allianceId, min_score: $minScore,
+        max_score: $maxScore, min_cities: $minCities, max_cities: $maxCities, vmode: $vmode,
+        orderBy: { column: SCORE, order: ASC }
+      ) {
         paginatorInfo {
           currentPage
           hasMorePages
@@ -175,30 +204,98 @@ async function getNationsPage(page = 1, perPage = 100) {
           last_active
           date
           discord
+          cities {
+            infrastructure
+          }
+          offensive_wars {
+            id
+          }
+          defensive_wars {
+            id
+          }
         }
       }
     }
   `;
-  const data = await pnwRequest(query, { page, first: perPage });
+  const data = await pnwRequest(query, {
+    page,
+    first: perPage,
+    allianceId: filters.allianceId,
+    minScore: filters.minScore,
+    maxScore: filters.maxScore,
+    minCities: filters.minCities,
+    maxCities: filters.maxCities,
+    vmode: filters.vmode,
+  });
   return data.nations;
 }
 
 /**
- * Pulls multiple pages of nations and filters them client-side by score range,
- * city count range, and whether they belong to an alliance. We filter client-side
- * (rather than asking PnW's API to do it) because their exact GraphQL filter
- * argument names for score/city ranges aren't reliably documented - this approach
- * only relies on fields we've already confirmed work.
+ * Searches for unaligned nations (no alliance) matching score/city filters,
+ * using PnW's real server-side filters - much faster than fetching everything
+ * and filtering ourselves, since the API does the work.
  *
- * `maxPages` caps how much we fetch, so this never turns into a runaway scan.
+ * `excludeVacationMode` skips nations currently in vacation mode by default,
+ * since mailing them is pointless until they return.
+ *
+ * `maxPages` is a safety cap so this can never turn into a runaway scan even
+ * if a filter combination matches an enormous number of nations.
  */
-async function searchUnalignedNations({ scoreMin, scoreMax, citiesMin, citiesMax, maxPages = 10 } = {}) {
+async function searchUnalignedNations({
+  scoreMin,
+  scoreMax,
+  citiesMin,
+  citiesMax,
+  excludeVacationMode = true,
+  maxPages = 10,
+} = {}) {
+  const filters = {
+    allianceId: [0],
+    minScore: scoreMin,
+    maxScore: scoreMax,
+    minCities: citiesMin,
+    maxCities: citiesMax,
+    vmode: excludeVacationMode ? false : undefined,
+  };
+
+  try {
+    return await fetchPagesWithFilters(filters, maxPages);
+  } catch (err) {
+    // If PnW's API doesn't actually accept one of these filter arguments
+    // (their documentation can be out of date), fall back to the older,
+    // already-proven approach: fetch by alliance_id only, then filter the
+    // rest ourselves in plain JavaScript. Slower, but can't break.
+    console.warn(
+      `⚠️ Server-side filtered search failed (${err.message}), falling back to client-side filtering.`
+    );
+    return await fetchAndFilterClientSide({ scoreMin, scoreMax, citiesMin, citiesMax, excludeVacationMode }, maxPages);
+  }
+}
+
+async function fetchPagesWithFilters(filters, maxPages) {
   const results = [];
   let page = 1;
   let hasMorePages = true;
 
   while (hasMorePages && page <= maxPages) {
-    const pageData = await getNationsPage(page, 100);
+    const pageData = await getNationsPage(page, 100, filters);
+    results.push(...pageData.data);
+    hasMorePages = pageData.paginatorInfo.hasMorePages;
+    page++;
+  }
+
+  return results;
+}
+
+async function fetchAndFilterClientSide({ scoreMin, scoreMax, citiesMin, citiesMax, excludeVacationMode }, maxPages) {
+  const results = [];
+  let page = 1;
+  let hasMorePages = true;
+
+  while (hasMorePages && page <= maxPages) {
+    // Only pass alliance_id here, since that's the one filter we've directly
+    // confirmed works (the scanner has been using it successfully for weeks).
+    const pageData = await getNationsPage(page, 100, { allianceId: [0] });
     for (const nation of pageData.data) {
       if (Number(nation.alliance_id) !== 0) continue;
       if (scoreMin !== undefined && Number(nation.score) < scoreMin) continue;
