@@ -13,6 +13,7 @@ const pnw = require('../pnwApi');
 const { resolveNation } = require('../utils/resolveNation');
 const { getOrCreateRecruitThread } = require('../utils/threads');
 const { calculateRecruitScore } = require('../utils/recruitScore');
+const { truncateForDiscord } = require('../utils/discordText');
 
 const VALID_STAGES = ['New', 'Interested', 'Interviewing', 'Invited', 'Joined', 'Rejected', 'Blacklisted'];
 
@@ -186,7 +187,7 @@ module.exports = {
         if (db.getTemplate(id)) {
           return interaction.reply({
             content: `❌ A template with ID "${id}" already exists. Delete it first or use a different ID.`,
-            ephemeral: true,
+            flags: 64,
           });
         }
 
@@ -197,7 +198,7 @@ module.exports = {
             : `It will be sent automatically as the "${type}" follow-up to recruits who haven't moved past the "New" stage.`;
         return interaction.reply({
           content: `✅ Template "${id}" created (type: ${type}). ${usageHint}`,
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -206,7 +207,7 @@ module.exports = {
         if (templates.length === 0) {
           return interaction.reply({
             content: 'No templates yet. Create one with `/recruit template create`.',
-            ephemeral: true,
+            flags: 64,
           });
         }
 
@@ -223,7 +224,7 @@ module.exports = {
           );
 
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: 64 });
       }
 
       if (sub === 'delete') {
@@ -231,14 +232,14 @@ module.exports = {
         const existed = db.deleteTemplate(id);
         return interaction.reply({
           content: existed ? `✅ Template "${id}" deleted.` : `❌ No template found with ID "${id}".`,
-          ephemeral: true,
+          flags: 64,
         });
       }
 
       if (sub === 'stats') {
         const stats = db.getTemplateStats();
         if (stats.length === 0) {
-          return interaction.reply({ content: 'No templates yet, so no A/B data to show.', ephemeral: true });
+          return interaction.reply({ content: 'No templates yet, so no A/B data to show.', flags: 64 });
         }
 
         // Sort best-converting first, so the winner is obvious at a glance.
@@ -256,7 +257,7 @@ module.exports = {
               .join('\n\n')
           );
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: 64 });
       }
     }
 
@@ -268,7 +269,7 @@ module.exports = {
       if (enabled && db.getAllTemplates().length === 0) {
         return interaction.reply({
           content: '❌ You need at least one recruitment template before turning auto-recruit on. Use `/recruit template create` first.',
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -277,7 +278,7 @@ module.exports = {
         content: enabled
           ? '✅ Auto-recruit is now **ON**.'
           : '🛑 Auto-recruit is now **OFF**.',
-        ephemeral: true,
+        flags: 64,
       });
     }
 
@@ -296,12 +297,12 @@ module.exports = {
           { name: 'Total Recruits Tracked', value: String(recruitCount), inline: true }
         );
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: 64 });
     }
 
     // ---------- /recruit stage ----------
     if (sub === 'stage') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const input = interaction.options.getString('nation');
       const stage = interaction.options.getString('stage');
 
@@ -319,7 +320,7 @@ module.exports = {
 
     // ---------- /recruit profile ----------
     if (sub === 'profile') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const input = interaction.options.getString('nation');
 
       let nation;
@@ -356,7 +357,7 @@ module.exports = {
 
     // ---------- /recruit score ----------
     if (sub === 'score') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const input = interaction.options.getString('nation');
 
       let nation;
@@ -387,7 +388,7 @@ module.exports = {
 
     // ---------- /recruit assign ----------
     if (sub === 'assign') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const input = interaction.options.getString('nation');
       const staffUser = interaction.options.getUser('staff');
 
@@ -405,7 +406,7 @@ module.exports = {
 
     // ---------- /recruit note ----------
     if (sub === 'note') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const input = interaction.options.getString('nation');
       const text = interaction.options.getString('text');
 
@@ -438,7 +439,7 @@ module.exports = {
           { name: 'By Stage', value: stageLines }
         );
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: 64 });
     }
 
     // ---------- /recruit attribution ----------
@@ -447,7 +448,7 @@ module.exports = {
       if (joined.length === 0) {
         return interaction.reply({
           content: 'No recruits are currently marked "Joined" yet. Use `/recruit stage` to update a recruit\'s stage as they progress.',
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -463,12 +464,12 @@ module.exports = {
         .setColor(0x2ecc71)
         .setDescription(lines.join('\n\n').slice(0, 4000));
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: 64 });
     }
 
     // ---------- /recruit bulk ----------
     if (sub === 'bulk') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const scoreMin = interaction.options.getInteger('score-min') ?? undefined;
       const scoreMax = interaction.options.getInteger('score-max') ?? undefined;
@@ -556,7 +557,7 @@ module.exports = {
             .setColor(0xf1c40f)
             .setTimestamp();
           await thread.send({ embeds: [embed] });
-          await thread.send({ content: `**Message:**\n${body}` });
+          await thread.send({ content: truncateForDiscord(body, '**Message:**\n') });
         } catch (err) {
           console.error('Could not log bulk mail to thread:', err.message);
         }

@@ -12,6 +12,7 @@ const { EmbedBuilder } = require('discord.js');
 const pnw = require('../pnwApi');
 const db = require('../database');
 const { getOrCreateRecruitThread } = require('../utils/threads');
+const { truncateForDiscord } = require('../utils/discordText');
 
 const FOLLOW_UP_THRESHOLDS = {
   1: 3, // follow_up_stage 0 -> 1 once 3+ days have passed since first contact
@@ -117,7 +118,7 @@ async function runFollowUpScan(client) {
           .setColor(0x95a5a6)
           .setTimestamp();
         await thread.send({ embeds: [embed] });
-        await thread.send({ content: `**Message:**\n${body}` });
+        await thread.send({ content: truncateForDiscord(body, '**Message:**\n') });
       } catch (err) {
         console.error('❌ Could not post follow-up log to thread:', err.message);
       }

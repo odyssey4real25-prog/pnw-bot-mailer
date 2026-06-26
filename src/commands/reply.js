@@ -5,6 +5,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const pnw = require('../pnwApi');
 const db = require('../database');
+const { truncateForDiscord } = require('../utils/discordText');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -15,7 +16,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     const allRecruits = db.getAllRecruits();
     const recruit = allRecruits.find(
@@ -53,7 +54,7 @@ module.exports = {
       .setTimestamp();
 
     await interaction.channel.send({ embeds: [embed] });
-    await interaction.channel.send({ content: `**Message:**\n${message}` });
+    await interaction.channel.send({ content: truncateForDiscord(message, '**Message:**\n') });
 
     return interaction.editReply('✅ Reply sent.');
   },

@@ -35,7 +35,7 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'add') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const input = interaction.options.getString('nation');
       const reason = interaction.options.getString('reason');
 
@@ -56,7 +56,7 @@ module.exports = {
     }
 
     if (sub === 'remove') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const input = interaction.options.getString('nation');
 
       let nation;
@@ -80,7 +80,7 @@ module.exports = {
     if (sub === 'list') {
       const entries = db.getAllBlacklisted();
       if (entries.length === 0) {
-        return interaction.reply({ content: 'The blacklist is empty.', ephemeral: true });
+        return interaction.reply({ content: 'The blacklist is empty.', flags: 64 });
       }
 
       const embed = new EmbedBuilder()
@@ -93,7 +93,7 @@ module.exports = {
             .slice(0, 4000)
         );
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: 64 });
     }
   },
 };

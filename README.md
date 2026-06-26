@@ -416,3 +416,33 @@ Now includes a "Recruit Quality" field alongside everything else.
 | War activity | 8 | Any current war involvement suggests an engaged, active player |
 
 **Important honesty note:** this is a heuristic I designed based on reasonable assumptions about what makes a "good" recruit, not something PnW or anyone else validated. It's meant to help you sort a long list faster, not to replace your own judgment about a specific nation. If after using it for a while the priorities feel wrong (e.g. you think war activity shouldn't matter, or city count should be weighted higher), tell me and I can adjust the weights - they're just numbers in one function, easy to retune.
+
+---
+
+# PHASE 7 — Merged in Your Mailing/Announcement Bot
+
+Your separate Discord mailing bot's features are now part of this bot. New commands:
+
+- **`/dm user`** — DM a single person, with an optional image attachment
+- **`/dm role`** — mass-DM everyone with a given role, showing live progress and respecting Administrator-only permission
+- **`/announce`** — post a message (with optional image) to any channel
+- **`/cancel`** — stop an in-progress mass DM partway through
+
+### Setup steps (read carefully - one extra step this time)
+
+1. Unzip the new project files as usual (or copy over: `src/index.js`, and add the new files `src/commands/dm.js`, `src/commands/announce.js`, `src/commands/cancel.js`, `src/state/massDm.js`)
+2. **New Discord setting required:** go to the [Discord Developer Portal](https://discord.com/developers/applications) -> your bot application -> **Bot** tab -> scroll to **"Privileged Gateway Intents"** -> turn ON **"Server Members Intent"**. This is required for `/dm role` to find everyone who has a given role. Without this toggle, the bot will fail to start or `/dm role` won't work.
+3. `npm install` (no new packages needed)
+4. `node src/deployCommands.js` (registers `/dm`, `/announce`, `/cancel`)
+5. `node src/index.js`
+6. Push to GitHub so Railway picks up the update - and don't forget to enable that same intent toggle; it's a Discord-side setting tied to your bot application, not something Railway needs configured separately.
+
+### What I did NOT carry over, and why
+
+- Your old bot used its own separate `.env` values (`TOKEN`, `CLIENT_ID`, `GUILD_ID`). Since we're merging into **one bot identity** (this PnW bot, already live on Railway), these commands now use your existing `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` - you don't need to add anything new to `.env`.
+- If your old mailing bot was a **separate Discord application** (different bot user in your server), you can now remove/kick that old bot from your server once you confirm `/dm`, `/announce`, and `/cancel` work under this bot instead - having both running would just be redundant.
+- I kept the exact same permission model (Administrator-only) and behavior (1.2 second delay between DMs, progress updates every 5 members, cancellable mid-run) as your original bot - nothing about how these commands work was changed, only where the code lives.
+
+### Verified before delivery
+
+I tested that all 8 commands (the 5 original PnW commands plus these 3 new ones) load without errors, and confirmed `/help` automatically picked up the 3 new commands with zero manual edits to `help.js` - proving the self-updating design from earlier is working as intended.

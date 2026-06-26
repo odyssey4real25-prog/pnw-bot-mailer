@@ -18,7 +18,7 @@ module.exports = {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply(errorMessage).catch(() => {});
       } else {
-        await interaction.reply({ content: errorMessage, ephemeral: true }).catch(() => {});
+        await interaction.reply({ content: errorMessage, flags: 64 }).catch(() => {});
       }
     }
   },

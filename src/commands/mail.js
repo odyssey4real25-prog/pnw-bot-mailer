@@ -6,6 +6,7 @@ const pnw = require('../pnwApi');
 const db = require('../database');
 const { getOrCreateRecruitThread } = require('../utils/threads');
 const { resolveNation } = require('../utils/resolveNation');
+const { truncateForDiscord } = require('../utils/discordText');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -44,7 +45,7 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'send') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const nationInput = interaction.options.getString('nation');
       const subject = interaction.options.getString('subject');
@@ -108,13 +109,13 @@ module.exports = {
         .setTimestamp();
 
       await thread.send({ embeds: [embed] });
-      await thread.send({ content: `**Message:**\n${message}` });
+      await thread.send({ content: truncateForDiscord(message, '**Message:**\n') });
 
       return interaction.editReply(`✅ Mail sent to ${nation.nation_name} (#${nationId}). See ${thread}.`);
     }
 
     if (sub === 'history') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
       const nationInput = interaction.options.getString('nation');
 
       let nation;

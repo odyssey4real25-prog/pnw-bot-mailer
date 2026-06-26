@@ -8,6 +8,7 @@ const { EmbedBuilder } = require('discord.js');
 const pnw = require('../pnwApi');
 const db = require('../database');
 const { getOrCreateRecruitThread } = require('../utils/threads');
+const { truncateForDiscord } = require('../utils/discordText');
 
 // How many new nations we'll mail in a single run, at most.
 // This protects against accidentally mass-mailing hundreds of nations
@@ -96,7 +97,7 @@ async function runScan(client) {
           .setColor(0xf1c40f)
           .setTimestamp();
         await thread.send({ embeds: [embed] });
-        await thread.send({ content: `**Message:**\n${body}` });
+        await thread.send({ content: truncateForDiscord(body, '**Message:**\n') });
       } catch (err) {
         console.error('❌ Could not post auto-recruit log to thread:', err.message);
       }
