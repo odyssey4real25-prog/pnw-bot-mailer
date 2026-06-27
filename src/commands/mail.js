@@ -7,6 +7,7 @@ const db = require('../database');
 const { getOrCreateRecruitThread } = require('../utils/threads');
 const { resolveNation } = require('../utils/resolveNation');
 const { truncateForDiscord } = require('../utils/discordText');
+const { canSendRecruitmentMail } = require('../utils/permissions');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -45,6 +46,13 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'send') {
+      if (!canSendRecruitmentMail(interaction)) {
+        return interaction.reply({
+          content: '❌ You don\'t have permission to send recruitment mail. Ask an admin about the recruiter role.',
+          flags: 64,
+        });
+      }
+
       await interaction.deferReply({ flags: 64 });
 
       const nationInput = interaction.options.getString('nation');
@@ -74,8 +82,10 @@ module.exports = {
         );
       }
 
+      const personalKey = db.getPersonalApiKey(interaction.user.id);
+
       try {
-        await pnw.sendMail(nationId, subject, message);
+        await pnw.sendMail(nationId, subject, message, personalKey);
       } catch (err) {
         return interaction.editReply(`❌ Failed to send mail: ${err.message}`);
       }
@@ -111,7 +121,9 @@ module.exports = {
       await thread.send({ embeds: [embed] });
       await thread.send({ content: truncateForDiscord(message, '**Message:**\n') });
 
-      return interaction.editReply(`✅ Mail sent to ${nation.nation_name} (#${nationId}). See ${thread}.`);
+      return interaction.editReply(
+        `✅ Mail sent to ${nation.nation_name} (#${nationId}) from ${personalKey ? 'your own nation' : 'the alliance\'s shared nation'}. See ${thread}.`
+      );
     }
 
     if (sub === 'history') {

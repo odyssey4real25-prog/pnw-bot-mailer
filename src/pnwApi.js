@@ -7,19 +7,25 @@
 // 2. A separate, older REST endpoint *specifically* for sending in-game mail.
 //    Mail sending is NOT part of the GraphQL schema - it has its own endpoint.
 
-const API_KEY = process.env.PNW_API_KEY;
-const GRAPHQL_URL = `https://api.politicsandwar.com/graphql?api_key=${API_KEY}`;
+const DEFAULT_API_KEY = process.env.PNW_API_KEY;
 const SEND_MESSAGE_URL = 'https://politicsandwar.com/api/send-message/';
+
+function graphqlUrlFor(apiKey) {
+  return `https://api.politicsandwar.com/graphql?api_key=${apiKey}`;
+}
 
 /**
  * Sends a raw GraphQL request to Politics & War (used for read-only lookups).
+ * Pass `apiKeyOverride` to use someone's personal key instead of the bot's
+ * default shared key - used when validating a staff member's key.
  */
-async function pnwRequest(query, variables = {}) {
-  const response = await fetch(GRAPHQL_URL, {
+async function pnwRequest(query, variables = {}, apiKeyOverride = null) {
+  const apiKey = apiKeyOverride || DEFAULT_API_KEY;
+  const response = await fetch(graphqlUrlFor(apiKey), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Api-Key': API_KEY,
+      'X-Api-Key': apiKey,
     },
     body: JSON.stringify({ query, variables }),
   });
@@ -35,12 +41,36 @@ async function pnwRequest(query, variables = {}) {
 }
 
 /**
+ * Does a lightweight check that an API key is at least valid and working,
+ * by attempting a small read-only query with it. This can't 100% guarantee
+ * the key is allowed to send mail (PnW's send-message endpoint is a separate
+ * system with its own validation), but it catches typos and dead keys
+ * immediately instead of someone finding out days later.
+ */
+async function verifyApiKey(apiKey) {
+  try {
+    await pnwRequest('query { nations(first: 1) { data { id } } }', {}, apiKey);
+    return { valid: true };
+  } catch (err) {
+    return { valid: false, reason: err.message };
+  }
+}
+
+
+/**
  * Sends in-game mail to a nation using PnW's dedicated send-message endpoint.
  * This is a plain form POST, not GraphQL.
+ *
+ * Pass `apiKeyOverride` to send the mail AS a specific staff member's own
+ * nation (using their personally-registered key) instead of the bot's
+ * default shared key. Whichever key is used, the mail appears in-game as
+ * sent from that key's nation - this is how PnW's API works, not a choice
+ * we're making.
  */
-async function sendMail(nationId, subject, message) {
+async function sendMail(nationId, subject, message, apiKeyOverride = null) {
+  const apiKey = apiKeyOverride || DEFAULT_API_KEY;
   const body = new URLSearchParams({
-    key: API_KEY,
+    key: apiKey,
     to: String(nationId),
     subject,
     message,
@@ -320,4 +350,5 @@ module.exports = {
   getRecentUnalignedNations,
   getNationsPage,
   searchUnalignedNations,
+  verifyApiKey,
 };

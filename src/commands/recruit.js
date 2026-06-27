@@ -14,6 +14,7 @@ const { resolveNation } = require('../utils/resolveNation');
 const { getOrCreateRecruitThread } = require('../utils/threads');
 const { calculateRecruitScore } = require('../utils/recruitScore');
 const { truncateForDiscord } = require('../utils/discordText');
+const { canSendRecruitmentMail } = require('../utils/permissions');
 
 const VALID_STAGES = ['New', 'Interested', 'Interviewing', 'Invited', 'Joined', 'Rejected', 'Blacklisted'];
 
@@ -469,6 +470,13 @@ module.exports = {
 
     // ---------- /recruit bulk ----------
     if (sub === 'bulk') {
+      if (!canSendRecruitmentMail(interaction)) {
+        return interaction.reply({
+          content: '❌ You don\'t have permission to send recruitment mail. Ask an admin about the recruiter role.',
+          flags: 64,
+        });
+      }
+
       await interaction.deferReply({ flags: 64 });
 
       const scoreMin = interaction.options.getInteger('score-min') ?? undefined;
@@ -523,6 +531,7 @@ module.exports = {
       }
 
       const toSend = scored.slice(0, BULK_MAX_SEND).map((s) => s.nation);
+      const personalKey = db.getPersonalApiKey(interaction.user.id);
       let sentCount = 0;
       const failures = [];
 
@@ -534,7 +543,7 @@ module.exports = {
         const body = fillTemplate(template.body, nation);
 
         try {
-          await pnw.sendMail(nation.id, subject, body);
+          await pnw.sendMail(nation.id, subject, body, personalKey);
         } catch (err) {
           failures.push(`#${nation.id}: ${err.message}`);
           continue;
@@ -565,7 +574,7 @@ module.exports = {
         await sleep(BULK_DELAY_MS);
       }
 
-      let resultMsg = `✅ Bulk send complete. Mailed **${sentCount}** nation(s).`;
+      let resultMsg = `✅ Bulk send complete. Mailed **${sentCount}** nation(s) from ${personalKey ? 'your own nation' : "the alliance's shared nation"}.`;
       if (eligible.length > BULK_MAX_SEND) {
         resultMsg += `\n${eligible.length - BULK_MAX_SEND} more eligible nation(s) were left for the next run (safety cap of ${BULK_MAX_SEND} per command).`;
       }

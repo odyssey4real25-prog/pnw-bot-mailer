@@ -16,6 +16,7 @@ function defaultData() {
     knownNationIds: {},
     templates: {},
     blacklist: {},
+    personalApiKeys: {},
     settings: {
       autoRecruitEnabled: false,
     },
@@ -301,6 +302,52 @@ function getStats() {
   };
 }
 
+// ---------- Personal API keys ----------
+// Lets individual staff members register their OWN PnW API key, so when
+// THEY send recruitment mail, it appears in-game as sent from their nation
+// instead of the bot owner's. Stored in the same local data file as
+// everything else - see the security note in the README before relying on
+// this for anything highly sensitive.
+
+function setPersonalApiKey(discordUserId, apiKey) {
+  const data = loadData();
+  data.personalApiKeys[discordUserId] = {
+    api_key: apiKey,
+    added_at: new Date().toISOString(),
+  };
+  saveData(data);
+}
+
+function getPersonalApiKey(discordUserId) {
+  const data = loadData();
+  return data.personalApiKeys[discordUserId]?.api_key || null;
+}
+
+function removePersonalApiKey(discordUserId) {
+  const data = loadData();
+  const existed = Boolean(data.personalApiKeys[discordUserId]);
+  delete data.personalApiKeys[discordUserId];
+  saveData(data);
+  return existed;
+}
+
+function hasPersonalApiKey(discordUserId) {
+  return Boolean(getPersonalApiKey(discordUserId));
+}
+
+// ---------- Recruiter role gating ----------
+// Optional: if an admin sets a "recruiter role", only Administrators and
+// members with that role can use the mail-sending commands. If never set,
+// the commands stay open to everyone (same as before this feature existed).
+
+function setRecruiterRoleId(roleId) {
+  setSetting('recruiterRoleId', roleId);
+}
+
+function getRecruiterRoleId() {
+  return getSetting('recruiterRoleId') || null;
+}
+
 module.exports = {
   getRecruit,
   getAllRecruits,
@@ -323,6 +370,12 @@ module.exports = {
   getJoinAttribution,
   getSetting,
   setSetting,
+  setPersonalApiKey,
+  getPersonalApiKey,
+  removePersonalApiKey,
+  hasPersonalApiKey,
+  setRecruiterRoleId,
+  getRecruiterRoleId,
   addToBlacklist,
   removeFromBlacklist,
   isBlacklisted,

@@ -446,3 +446,46 @@ Your separate Discord mailing bot's features are now part of this bot. New comma
 ### Verified before delivery
 
 I tested that all 8 commands (the 5 original PnW commands plus these 3 new ones) load without errors, and confirmed `/help` automatically picked up the 3 new commands with zero manual edits to `help.js` - proving the self-updating design from earlier is working as intended.
+
+---
+
+# PHASE 8 — Personal API Keys & Recruiter Role Permissions
+
+This phase lets individual staff members send recruitment mail from THEIR OWN nation, instead of everything going out under yours - plus an optional way to restrict who can send recruitment mail at all.
+
+### New commands
+
+- **`/apikey set key:<your key>`** — register your own PnW API key (privately - only you see the confirmation). The bot tests the key actually works before saving it.
+- **`/apikey remove`** — delete your stored key
+- **`/apikey status`** — check if you have a key registered (never displays the key itself)
+- **`/config recruiter-role set/clear/status`** — Admin-only. Optionally restrict `/mail send` and `/recruit bulk` to Administrators plus one specific role.
+
+### How it works
+
+Once a staff member runs `/apikey set`, every `/mail send` or `/recruit bulk` THEY personally run will send mail from THEIR nation instead of the shared one in `.env`. Staff who haven't registered a key keep using the shared alliance key exactly as before - nothing changes for them. The bot tells you which one was used every time ("from your own nation" vs "from the alliance's shared nation"), so there's never ambiguity about who a recruit's mail actually came from.
+
+**Auto-recruit and follow-up scans always use the shared key**, regardless of who set up the bot - they're automated, not run by a specific person, so there's no "personal" identity to use for them.
+
+### Setup steps
+
+1. Unzip the new project files, add the new files: `src/commands/apikey.js`, `src/commands/config.js`, `src/utils/permissions.js`
+2. `npm install` (no new packages)
+3. `node src/deployCommands.js` (registers `/apikey` and `/config`)
+4. `node src/index.js`
+
+### Setting up role-based permission (optional)
+
+By default, anyone can still use `/mail send` and `/recruit bulk` - same as before this feature existed. If you want to restrict it to a "Recruiter" role:
+```
+/config recruiter-role set role:@Recruiter
+```
+To remove the restriction later:
+```
+/config recruiter-role clear
+```
+
+### Important honesty notes - please read before relying on this
+
+- **Where keys are stored:** personal API keys are saved in the bot's local data file (`data/bot.json`), in plain text - not specially encrypted. This file is already excluded from your GitHub repo (so it never becomes public), but anyone with direct access to your Railway hosting dashboard could technically open that file and read the keys inside it. This is the same level of protection your bot's other secrets (like your own `.env`) already get - not bank-grade encryption, just "not exposed publicly." If a staff member isn't comfortable with that level of protection, they should not register their key, and can keep using the shared one instead.
+- **Key validation is real but limited.** When someone runs `/apikey set`, the bot actually tests the key against PnW's API before saving it - so typos and dead keys get caught immediately. However, this test only confirms the key can read data; it can't 100% guarantee the key is allowed to send mail, since PnW's send-message system is a separate endpoint with its own rules. If sending fails despite a "valid" key, that's something to take up with PnW directly, not a bug in this check.
+- **If a staff member leaves your alliance or shouldn't have access anymore,** an admin can remove their key directly with `/apikey remove-for user:@someone` - no need to wait for them to do it themselves.
